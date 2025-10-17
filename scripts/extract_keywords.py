@@ -142,15 +142,38 @@ def process_json_files_in_batches(folder_path, output_csv, screen_names, batch_s
 
 
 def _process_and_save_batch(batch, output_csv, first_write):
-    """
-    Extract keywords from batch and append to CSV.
-    """
     df = pd.DataFrame(batch)
     print(f"🧠 Processing batch of {len(df)} tweets...")
 
-    # Apply cleaning and extraction
-    df['keywords_tfidf'] = extract_keywords_tfidf(df['message'])
-    df['keywords_keybert'] = extract_keywords_keybert(df['message'])
+    # Extract keywords
+    tfidf_keywords = extract_keywords_tfidf(df['message'])
+    keybert_keywords = extract_keywords_keybert(df['message'])
 
+    # Determine max number of keywords to use for column expansion
+    max_tfidf = max(len(kw_list) for kw_list in tfidf_keywords)
+    max_keybert = max(len(kw_list) for kw_list in keybert_keywords)
+
+    # Add expanded keyword columns
+    for i in range(max_tfidf):
+        df[f'tfidf_kw{i+1}'] = [kw_list[i] if i < len(kw_list) else '' for kw_list in tfidf_keywords]
+
+    for i in range(max_keybert):
+        df[f'keybert_kw{i+1}'] = [kw_list[i] if i < len(kw_list) else '' for kw_list in keybert_keywords]
+
+    # OPTIONAL CLEANING STARTS HERE
+
+    # Replace empty keyword strings with NaN for better CSV cleanliness
+    df.replace("", pd.NA, inplace=True)
+
+    # Remove rows where both TF-IDF and KeyBERT keywords are all NaN
+    df = df[
+        df[[f'tfidf_kw{i+1}' for i in range(max_tfidf)]].notna().any(axis=1) |
+        df[[f'keybert_kw{i+1}' for i in range(max_keybert)]].notna().any(axis=1)
+    ]
+
+    # OPTIONAL CLEANING ENDS HERE
+
+    # Save to CSV
     df.to_csv(output_csv, mode='w' if first_write else 'a', index=False, header=first_write)
     print(f"💾 Saved batch to {output_csv}")
+
